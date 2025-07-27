@@ -3,84 +3,66 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import NavBar from '../components/NavBar';
 import Button from '../components/Button';
-
-interface Destination {
-  id: string;
-  name: string;
-  country: string;
-  description: string;
-  image: string;
-  matchScore: number;
-}
+import { travelAPI, Destination, MeetupSuggestion } from '../api';
 
 const DestinationSuggestionsScreen: React.FC = () => {
   const { state } = useLocation();
   const navigate = useNavigate();
   const [destinations, setDestinations] = useState<Destination[]>([]);
+  const [meetups, setMeetups] = useState<MeetupSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Mock destinations based on preferences
-  const mockDestinations: Destination[] = [
-    {
-      id: '1',
-      name: 'Tokyo',
-      country: 'Japan',
-      description: 'A perfect blend of traditional culture and modern technology. Amazing food scene and vibrant nightlife.',
-      image: 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=400&h=300&fit=crop',
-      matchScore: 95
-    },
-    {
-      id: '2',
-      name: 'Barcelona',
-      country: 'Spain',
-      description: 'Rich history, stunning architecture, and incredible cuisine. Perfect for art lovers and food enthusiasts.',
-      image: 'https://images.unsplash.com/photo-1539650116574-75c0c6d81d3f?w=400&h=300&fit=crop',
-      matchScore: 92
-    },
-    {
-      id: '3',
-      name: 'Bali',
-      country: 'Indonesia',
-      description: 'Tropical paradise with beautiful beaches, ancient temples, and amazing street food.',
-      image: 'https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?w=400&h=300&fit=crop',
-      matchScore: 88
-    },
-    {
-      id: '4',
-      name: 'Paris',
-      country: 'France',
-      description: 'The city of love with world-class museums, fine dining, and romantic atmosphere.',
-      image: 'https://images.unsplash.com/photo-1502602898536-47ad22581b52?w=400&h=300&fit=crop',
-      matchScore: 85
-    },
-    {
-      id: '5',
-      name: 'New York',
-      country: 'USA',
-      description: 'The city that never sleeps. Urban adventures, amazing food, and endless entertainment.',
-      image: 'https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?w=400&h=300&fit=crop',
-      matchScore: 82
-    },
-  ];
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulate API call
+    // Fetch real destinations using all APIs
     const fetchDestinations = async () => {
-      setLoading(true);
-      
-      // Mock delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Filter and sort destinations based on preferences
-      let filteredDestinations = [...mockDestinations];
-      
-      if (state?.preferences) {
-        // In a real app, this would use Qloo API to get personalized recommendations
-        filteredDestinations = filteredDestinations.sort((a, b) => b.matchScore - a.matchScore);
+      try {
+        setLoading(true);
+        setError(null);
+        
+        console.log('Fetching destinations with state:', state);
+        
+        if (!state?.preferences) {
+          throw new Error('No preferences found. Please go back and set your preferences.');
+        }
+
+        const response = await travelAPI.getDestinationRecommendations(
+          state.preferences,
+          state.meetupsEnabled || false,
+          state.location
+        );
+        
+        setDestinations(response.destinations);
+        setMeetups(response.meetups);
+        
+      } catch (error) {
+        console.error('Error fetching destinations:', error);
+        setError(error instanceof Error ? error.message : 'Failed to fetch destinations');
+        
+        // Fallback to some basic destinations if API fails
+        setDestinations([
+          {
+            id: 'fallback_1',
+            name: 'Tokyo',
+            country: 'Japan',
+            description: 'A perfect blend of traditional culture and modern technology.',
+            image: 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=400&h=300&fit=crop',
+            matchScore: 85,
+            coords: { lat: 35.6762, lng: 139.6503 }
+          },
+          {
+            id: 'fallback_2',
+            name: 'Paris',
+            country: 'France',
+            description: 'The city of love with world-class museums and cuisine.',
+            image: 'https://images.unsplash.com/photo-1502602898536-47ad22581b52?w=400&h=300&fit=crop',
+            matchScore: 80,
+            coords: { lat: 48.8566, lng: 2.3522 }
+          }
+        ]);
+      } finally {
+        setLoading(false);
       }
-      
-      setDestinations(filteredDestinations);
-      setLoading(false);
     };
 
     fetchDestinations();
@@ -96,13 +78,36 @@ const DestinationSuggestionsScreen: React.FC = () => {
     });
   };
 
-  const handleSpecialTrip = (type: string) => {
-    navigate(`/special/${type}`, { 
-      state: { 
-        meetupsEnabled: state?.meetupsEnabled,
-        preferences: state?.preferences 
-      } 
-    });
+  const handleSpecialTrip = async (type: string) => {
+    try {
+      setLoading(true);
+      
+      // Get special trip data using real APIs
+      const tripData = await travelAPI.getSpecialTripItinerary(
+        type as 'world' | 'euro' | 'asia' | 'africa',
+        state?.preferences || { activities: [], cuisine: [], vibes: [] },
+        state?.meetupsEnabled || false
+      );
+      
+      navigate(`/special/${type}`, { 
+        state: { 
+          tripData,
+          meetupsEnabled: state?.meetupsEnabled,
+          preferences: state?.preferences 
+        } 
+      });
+    } catch (error) {
+      console.error('Error loading special trip:', error);
+      // Fallback to basic navigation
+      navigate(`/special/${type}`, { 
+        state: { 
+          meetupsEnabled: state?.meetupsEnabled,
+          preferences: state?.preferences 
+        } 
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (loading) {
@@ -110,18 +115,58 @@ const DestinationSuggestionsScreen: React.FC = () => {
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center pt-16">
         <NavBar active="explore" />
         <motion.div
-          className="text-center"
+          className="text-center max-w-md mx-auto px-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5 }}
         >
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
-            Finding Perfect Destinations
+            Finding Your Perfect Destinations
           </h2>
-          <p className="text-gray-600 dark:text-gray-400">
-            Analyzing your preferences with AI...
+          <p className="text-gray-600 dark:text-gray-400 mb-4">
+            🤖 Analyzing your preferences with Qloo AI<br />
+            🗺️ Getting location data from Google Maps<br />
+            ✨ Generating descriptions with Gemini<br />
+            🎭 Finding events with Ticketmaster
           </p>
+          <div className="text-sm text-gray-500 dark:text-gray-500">
+            This may take a few moments...
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center pt-16">
+        <NavBar active="explore" />
+        <motion.div
+          className="text-center max-w-md mx-auto px-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">
+            Oops! Something went wrong
+          </h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            {error}
+          </p>
+          <div className="flex gap-4">
+            <Button
+              label="Try Again"
+              variant="primary"
+              onClick={() => window.location.reload()}
+            />
+            <Button
+              label="Go Back"
+              variant="secondary"
+              onClick={() => navigate('/swipe')}
+            />
+          </div>
         </motion.div>
       </div>
     );
